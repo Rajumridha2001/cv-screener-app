@@ -59,6 +59,8 @@ def analyze_cv_with_gemini(jd_text, cv_text, api_key):
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(clean_text)
     except Exception as e:
+        # THIS IS THE NEW LINE WE ADDED TO REVEAL THE ERROR
+        st.error(f"Error reading CV: {e}") 
         return None
 
 # --- 4. MAIN INTERFACE ---
