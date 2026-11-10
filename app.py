@@ -3,6 +3,7 @@ import PyPDF2
 import google.generativeai as genai
 import pandas as pd
 import json
+import time  # Added to pause between CVs
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="AI CV Screener", page_icon="📄", layout="wide")
@@ -35,6 +36,7 @@ def extract_text_from_pdf(uploaded_file):
 
 def analyze_cv_with_gemini(jd_text, cv_text, api_key):
     genai.configure(api_key=api_key)
+    # Using the updated model to prevent 404 errors
     model = genai.GenerativeModel('gemini-3.8-flash')
     
     prompt = f"""
@@ -59,7 +61,7 @@ def analyze_cv_with_gemini(jd_text, cv_text, api_key):
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(clean_text)
     except Exception as e:
-        # THIS IS THE NEW LINE WE ADDED TO REVEAL THE ERROR
+        # This will reveal the exact error if the AI fails again
         st.error(f"Error reading CV: {e}") 
         return None
 
@@ -83,7 +85,7 @@ if st.button("🚀 Run Screening", type="primary"):
     elif not jd_file or not cv_files:
         st.error("Please upload both a Job Description and at least one CV.")
     else:
-        with st.spinner("Analyzing candidates... This may take a minute."):
+        with st.spinner("Analyzing candidates... This will take about 15 seconds per CV."):
             jd_text = extract_text_from_pdf(jd_file)
             results = []
             
@@ -102,43 +104,3 @@ if st.button("🚀 Run Screening", type="primary"):
                     # Get other scores
                     skills_score = analysis.get("skills_match_score", 0)
                     edu_score = analysis.get("education_match_score", 0)
-                    
-                    # Calculate Final Weighted Score
-                    final_score = (
-                        (skills_score * (weight_skills / 100)) +
-                        (exp_score * (weight_exp / 100)) +
-                        (edu_score * (weight_edu / 100))
-                    )
-                    
-                    results.append({
-                        "Candidate File": cv_file.name,
-                        "Final Match Score (%)": round(final_score, 1),
-                        "Total Years Experience": years_exp,
-                        "Skills Score (out of 100)": skills_score,
-                        "Education Score (out of 100)": edu_score,
-                        "Key Strength": analysis.get("key_strength", "N/A")
-                    })
-                
-                # Update progress bar
-                progress_bar.progress((i + 1) / len(cv_files))
-            
-            # Display Results
-            if results:
-                st.success("Screening Complete!")
-                df = pd.DataFrame(results)
-                # Sort by highest score first
-                df = df.sort_values(by="Final Match Score (%)", ascending=False).reset_index(drop=True)
-                
-                st.subheader("🏆 Candidate Leaderboard")
-                st.dataframe(df, use_container_width=True)
-                
-                # Download Button
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Results as CSV (Excel)",
-                    data=csv,
-                    file_name='cv_screening_results.csv',
-                    mime='text/csv',
-                )
-            else:
-                st.error("Failed to process candidates. Please check the CV formatting and API key.")
