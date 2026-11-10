@@ -35,7 +35,7 @@ def extract_text_from_pdf(uploaded_file):
 
 def analyze_cv_with_gemini(jd_text, cv_text, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     You are an expert HR recruiter. Compare the candidate's CV against the Job Description.
