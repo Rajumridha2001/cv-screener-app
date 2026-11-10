@@ -3,7 +3,7 @@ import PyPDF2
 import google.generativeai as genai
 import pandas as pd
 import json
-import time  # Added to pause between CVs
+import time
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="AI CV Screener", page_icon="📄", layout="wide")
@@ -36,7 +36,7 @@ def extract_text_from_pdf(uploaded_file):
 
 def analyze_cv_with_gemini(jd_text, cv_text, api_key):
     genai.configure(api_key=api_key)
-    # Using the updated model to prevent 404 errors
+    # Using the 3.8-flash model
     model = genai.GenerativeModel('gemini-3.8-flash')
     
     prompt = f"""
@@ -57,11 +57,9 @@ def analyze_cv_with_gemini(jd_text, cv_text, api_key):
     """
     try:
         response = model.generate_content(prompt)
-        # Clean up output just in case the AI wraps it in markdown blocks
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(clean_text)
     except Exception as e:
-        # This will reveal the exact error if the AI fails again
         st.error(f"Error reading CV: {e}") 
         return None
 
@@ -85,11 +83,10 @@ if st.button("🚀 Run Screening", type="primary"):
     elif not jd_file or not cv_files:
         st.error("Please upload both a Job Description and at least one CV.")
     else:
-        with st.spinner("Analyzing candidates... This will take about 15 seconds per CV."):
+        with st.spinner("Analyzing candidates... This will take about 20 seconds per CV to respect free tier limits."):
             jd_text = extract_text_from_pdf(jd_file)
             results = []
             
-            # Create a progress bar
             progress_bar = st.progress(0)
             
             for i, cv_file in enumerate(cv_files):
@@ -97,10 +94,46 @@ if st.button("🚀 Run Screening", type="primary"):
                 analysis = analyze_cv_with_gemini(jd_text, cv_text, api_key)
                 
                 if analysis:
-                    # Calculate Experience Score (Caps at 100)
                     years_exp = analysis.get("years_of_experience", 0)
                     exp_score = min(100, (years_exp / req_experience) * 100) if req_experience > 0 else 100
                     
-                    # Get other scores
                     skills_score = analysis.get("skills_match_score", 0)
                     edu_score = analysis.get("education_match_score", 0)
+                    
+                    final_score = (
+                        (skills_score * (weight_skills / 100)) +
+                        (exp_score * (weight_exp / 100)) +
+                        (edu_score * (weight_edu / 100))
+                    )
+                    
+                    results.append({
+                        "Candidate File": cv_file.name,
+                        "Final Match Score (%)": round(final_score, 1),
+                        "Total Years Experience": years_exp,
+                        "Skills Score (out of 100)": skills_score,
+                        "Education Score (out of 100)": edu_score,
+                        "Key Strength": analysis.get("key_strength", "N/A")
+                    })
+                
+                progress_bar.progress((i + 1) / len(cv_files))
+                
+                # Pauses for 20 seconds to prevent hitting Google's free tier rate limit
+                time.sleep(20)
+            
+            if results:
+                st.success("Screening Complete!")
+                df = pd.DataFrame(results)
+                df = df.sort_values(by="Final Match Score (%)", ascending=False).reset_index(drop=True)
+                
+                st.subheader("🏆 Candidate Leaderboard")
+                st.dataframe(df, use_container_width=True)
+                
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Results as CSV (Excel)",
+                    data=csv,
+                    file_name='cv_screening_results.csv',
+                    mime='text/csv',
+                )
+            else:
+                st.error("Failed to process candidates. Please check the CV formatting and API key.")
